@@ -10,12 +10,14 @@ import yaml
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 
 ZSIGA_REPO = os.environ.get("ZSIGA_REPO", "/home/zsiga/repo")
+DAEMON_URL = os.environ.get("ZSIGA_DAEMON_URL", "http://localhost:58175")
 
 
-def create_app(repo_path: str = None):
+def create_app(repo_path: str = None, daemon_url: str = None):
     app = Flask(__name__)
     app.secret_key = "zsiga-web-console"
     app.config["ZSIGA_REPO"] = repo_path or ZSIGA_REPO
+    app.config["DAEMON_URL"] = daemon_url or DAEMON_URL
 
     @app.template_filter("status_class")
     def status_class(status: str) -> str:
@@ -116,10 +118,10 @@ def _get_daemon_status(app) -> dict:
 
 
 def _get_pipeline_status(app) -> dict:
-    daemon_port = 58175
+    daemon_url = app.config.get("DAEMON_URL", DAEMON_URL)
     try:
         result = subprocess.run(
-            ["curl", "-s", "--max-time", "3", f"http://localhost:{daemon_port}/api/pipeline-status"],
+            ["curl", "-s", "--max-time", "3", f"{daemon_url}/api/pipeline-status"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -130,10 +132,10 @@ def _get_pipeline_status(app) -> dict:
 
 
 def _get_proposal_stats(app) -> dict:
-    daemon_port = 58175
+    daemon_url = app.config.get("DAEMON_URL", DAEMON_URL)
     try:
         result = subprocess.run(
-            ["curl", "-s", "--max-time", "3", f"http://localhost:{daemon_port}/api/proposal-stats"],
+            ["curl", "-s", "--max-time", "3", f"{daemon_url}/api/proposal-stats"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
