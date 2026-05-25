@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>zsiga 控制台</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav class="nav">
+  <a href="/" class="nav-brand">⚡ zsiga</a>
+  <div class="nav-links">
+    <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">仪表盘</a>
+    <a href="/admin/" class="nav-link {% if '/admin' in request.path %}active{% endif %}">系统配置</a>
+    <a href="/proposals/" class="nav-link {% if '/proposals' in request.path %}active{% endif %}">需求管理</a>
+  </div>
+  <div class="nav-info">
+    <span class="badge {% if daemon.get('state') == 'working' %}badge-good{% elif daemon.get('state') == 'resting' %}badge-muted{% else %}badge-warn{% endif %}">
+      {% if daemon.get('state') == 'working' %}⚡ 工作中{% elif daemon.get('state') == 'resting' %}💤 休息中{% else %}⚠ {{ daemon.get('state', '未知') }}{% endif %}
+    </span>
+  </div>
+</nav>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="flash-container">
+  {% for category, message in messages %}
+  <div class="flash flash-{{ category }}">{{ message }}<button onclick="this.parentElement.remove()" class="flash-close">&times;</button></div>
+  {% endfor %}
+{% endif %}
+{% endwith %}
+
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  zsiga-web · {{ repo_path }}
+</footer>
+</body>
+</html>

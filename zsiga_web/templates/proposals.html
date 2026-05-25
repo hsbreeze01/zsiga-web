@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section">
+  <div class="section-header">
+    <h2>📋 需求队列</h2>
+    <a href="/proposals/submit" class="btn">+ 新建需求</a>
+  </div>
+
+  {% if proposals %}
+  <table>
+    <thead><tr><th>提案名称</th><th>当前阶段</th><th>Steward 审查</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for p in proposals %}
+    <tr{% if p.name == active_proposal %} class="row-active"{% endif %}>
+      <td>
+        <strong>{{ p.name }}</strong>
+        {% if p.name == active_proposal %}<span class="badge badge-good">执行中</span>{% endif %}
+      </td>
+      <td>{{ p.phase_state.get('current_phase', '等待中') if p.phase_state else '等待中' }}</td>
+      <td>{% if p.has_steward_review %}<span class="badge badge-good">已审查</span>{% else %}<span class="badge badge-muted">未审查</span>{% endif %}</td>
+      <td>
+        {% if p.name == active_proposal %}
+          <span class="badge badge-good">执行中 ({{ current_phase }})</span>
+        {% else %}
+          <span class="badge badge-muted">排队中</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if p.name != active_proposal %}
+        <form method="post" action="/proposals/remove/{{ p.name }}" style="display:inline" onsubmit="return confirm('确认移除 {{ p.name }}？')">
+          <button type="submit" class="btn btn-sm btn-danger">移除</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    队列为空 — <a href="/proposals/submit">投递第一个 proposal</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

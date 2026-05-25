@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section">
+  <h2>📋 项目配置</h2>
+  <table>
+    <thead><tr><th>项目名</th><th>路径</th><th>部署分支</th><th>传输方式</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for name, t in targets.items() %}
+    <tr>
+      <td><strong>{{ name }}</strong></td>
+      <td><code>{{ t.path }}</code></td>
+      <td>{{ t.deploy_branch }}</td>
+      <td>{{ t.transport }}</td>
+      <td>
+        <button onclick="validateTarget('{{ name }}')" class="btn btn-sm">验证</button>
+        <span id="validate-{{ name }}" class="validate-result"></span>
+        <form method="post" action="/admin/target/delete/{{ name }}" style="display:inline" onsubmit="return confirm('确认删除项目 {{ name }}？')">
+          <button type="submit" class="btn btn-sm btn-danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <details class="details">
+    <summary>+ 添加项目</summary>
+    <form method="post" action="/admin/target/add" class="form-grid">
+      <div class="form-group">
+        <label>项目名称</label>
+        <input type="text" name="name" placeholder="factory" required>
+      </div>
+      <div class="form-group">
+        <label>项目路径</label>
+        <input type="text" name="path" placeholder="/home/user/project" required>
+      </div>
+      <div class="form-group">
+        <label>部署分支</label>
+        <input type="text" name="deploy_branch" value="main">
+      </div>
+      <div class="form-group">
+        <label>测试命令</label>
+        <input type="text" name="test_cmd" placeholder="venv/bin/python -m pytest -x --tb=short">
+      </div>
+      <div class="form-group">
+        <label>传输方式</label>
+        <select name="transport">
+          <option value="local">本地</option>
+          <option value="ssh">SSH</option>
+        </select>
+      </div>
+      <div class="form-group ssh-fields" style="display:none">
+        <label>SSH 主机</label>
+        <input type="text" name="ssh_host" placeholder="47.99.57.152">
+      </div>
+      <div class="form-group ssh-fields" style="display:none">
+        <label>SSH 用户</label>
+        <input type="text" name="ssh_user" value="root">
+      </div>
+      <div class="form-group ssh-fields" style="display:none">
+        <label>SSH 密钥路径</label>
+        <input type="text" name="ssh_key_path" placeholder="~/.ssh/id_ed25519">
+      </div>
+      <div class="form-group full">
+        <button type="submit" class="btn">添加项目</button>
+      </div>
+    </form>
+  </details>
+</div>
+
+<div class="section">
+  <h2>🔑 LLM 配置</h2>
+  <form method="post" action="/admin/llm" class="form-grid">
+    <div class="form-group">
+      <label>供应商</label>
+      <input type="text" name="provider" value="{{ llm.get('provider', 'zhipuai') }}">
+    </div>
+    <div class="form-group">
+      <label>模型</label>
+      <input type="text" name="model" value="{{ llm.get('model', 'glm-5.1') }}">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" name="api_key" value="{{ llm.get('api_key', '') }}" required>
+    </div>
+    <div class="form-group">
+      <label>Base URL</label>
+      <input type="text" name="base_url" value="{{ llm.get('base_url', 'https://open.bigmodel.cn/api/coding/paas/v4') }}">
+    </div>
+    <div class="form-group full">
+      <button type="submit" class="btn">保存并验证</button>
+    </div>
+  </form>
+</div>
+
+<div class="section">
+  <h2>🐙 GitHub 配置</h2>
+  <form method="post" action="/admin/github" class="form-grid">
+    <div class="form-group">
+      <label>Token</label>
+      <input type="password" name="token" value="{{ github.get('token', '') }}" placeholder="ghp_xxxx">
+    </div>
+    <div class="form-group">
+      <label>仓库地址</label>
+      <input type="text" name="repo_url" value="{{ github.get('repo_url', '') }}" placeholder="git@github.com:user/repo.git">
+    </div>
+    <div class="form-group full">
+      <button type="submit" class="btn">保存并验证</button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.querySelector('select[name="transport"]').addEventListener('change', function() {
+  document.querySelectorAll('.ssh-fields').forEach(function(el) {
+    el.style.display = this.value === 'ssh' ? '' : 'none';
+  }.bind(this));
+});
+
+function validateTarget(name) {
+  var el = document.getElementById('validate-' + name);
+  el.textContent = '验证中...';
+  fetch('/admin/target/validate/' + name).then(r => r.json()).then(data => {
+    el.innerHTML = '<span class="badge ' + (data.ok ? 'badge-good' : 'badge-bad') + '">' + data.message + '</span>';
+  });
+}
+</script>
+{% endblock %}

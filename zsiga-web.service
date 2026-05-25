@@ -1,0 +1,20 @@
+[Unit]
+Description=zsiga web console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lancer
+Group=lancer
+WorkingDirectory=/home/zsiga/zsiga-web
+Environment=ZSIGA_REPO=/home/zsiga/repo
+ExecStart=/home/zsiga/zsiga-web/venv/bin/python run.py --port=58176 --repo=/home/zsiga/repo
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zsiga-web
+
+[Install]
+WantedBy=multi-user.target
