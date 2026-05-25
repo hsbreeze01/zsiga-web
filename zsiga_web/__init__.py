@@ -34,7 +34,7 @@ def create_app(repo_path: str = None, daemon_url: str = None):
 
     @app.context_processor
     def inject_globals():
-        return {"repo_path": app.config["ZSIGA_REPO"]}
+        return {"repo_path": app.config["ZSIGA_REPO"], "daemon": _get_daemon_status()}
 
     from .admin import admin_bp
     from .proposals import proposals_bp
@@ -43,63 +43,58 @@ def create_app(repo_path: str = None, daemon_url: str = None):
 
     @app.route("/")
     def index():
-        cfg = _load_config(app)
-        daemon_status = _get_daemon_status(app)
-        pipeline = _get_pipeline_status(app)
-        proposal_stats = _get_proposal_stats(app)
+        cfg = _load_config()
+        daemon_status = _get_daemon_status()
+        pipeline = _get_pipeline_status()
+        proposal_stats = _get_proposal_stats()
         return render_template("index.html",
                                config=cfg, daemon=daemon_status,
                                pipeline=pipeline, stats=proposal_stats)
 
     @app.route("/api/config")
     def api_config():
-        return jsonify(_load_config(app))
+        return jsonify(_load_config())
 
     @app.route("/api/daemon-status")
     def api_daemon_status():
-        return jsonify(_get_daemon_status(app))
+        return jsonify(_get_daemon_status())
 
     @app.route("/api/proposals")
     def api_proposals():
-        return jsonify(_get_proposals(app))
+        return jsonify(_get_proposals())
 
     @app.route("/api/proposal-stats")
     def api_proposal_stats():
-        return jsonify(_get_proposal_stats(app))
+        return jsonify(_get_proposal_stats())
 
     @app.route("/api/pipeline-status")
     def api_pipeline_status():
-        return jsonify(_get_pipeline_status(app))
+        return jsonify(_get_pipeline_status())
 
     return app
 
 
-def _repo(bp_or_app) -> Path:
-    if hasattr(bp_or_app, "app"):
-        app = bp_or_app.app
-    elif hasattr(bp_or_app, "config"):
-        app = bp_or_app
-    else:
-        app = bp_or_app
-    return Path(app.config["ZSIGA_REPO"])
+def _get_repo() -> Path:
+    from flask import current_app
+    return Path(current_app.config["ZSIGA_REPO"])
 
 
-def _load_config(app) -> dict:
-    cfg_path = _repo(app) / "zsiga.yaml"
+def _load_config() -> dict:
+    cfg_path = _get_repo() / "zsiga.yaml"
     if not cfg_path.exists():
         return {}
     with open(cfg_path) as f:
         return yaml.safe_load(f) or {}
 
 
-def _save_config(app, config: dict):
-    cfg_path = _repo(app) / "zsiga.yaml"
+def _save_config(config: dict):
+    cfg_path = _get_repo() / "zsiga.yaml"
     with open(cfg_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-def _get_db(app) -> sqlite3.Connection:
-    db_path = _repo(app) / "data" / "zsiga.db"
+def _get_db() -> sqlite3.Connection:
+    db_path = _get_repo() / "data" / "zsiga.db"
     if not db_path.exists():
         return None
     conn = sqlite3.connect(str(db_path))
@@ -107,8 +102,8 @@ def _get_db(app) -> sqlite3.Connection:
     return conn
 
 
-def _get_daemon_status(app) -> dict:
-    state_path = _repo(app) / "data" / "daemon_state.json"
+def _get_daemon_status() -> dict:
+    state_path = _get_repo() / "data" / "daemon_state.json"
     if state_path.exists():
         try:
             return json.loads(state_path.read_text())
@@ -117,8 +112,9 @@ def _get_daemon_status(app) -> dict:
     return {"state": "unknown"}
 
 
-def _get_pipeline_status(app) -> dict:
-    daemon_url = app.config.get("DAEMON_URL", DAEMON_URL)
+def _get_pipeline_status() -> dict:
+    from flask import current_app
+    daemon_url = current_app.config.get("DAEMON_URL", DAEMON_URL)
     try:
         result = subprocess.run(
             ["curl", "-s", "--max-time", "3", f"{daemon_url}/api/pipeline-status"],
@@ -131,8 +127,9 @@ def _get_pipeline_status(app) -> dict:
     return {}
 
 
-def _get_proposal_stats(app) -> dict:
-    daemon_url = app.config.get("DAEMON_URL", DAEMON_URL)
+def _get_proposal_stats() -> dict:
+    from flask import current_app
+    daemon_url = current_app.config.get("DAEMON_URL", DAEMON_URL)
     try:
         result = subprocess.run(
             ["curl", "-s", "--max-time", "3", f"{daemon_url}/api/proposal-stats"],
@@ -145,8 +142,8 @@ def _get_proposal_stats(app) -> dict:
     return {}
 
 
-def _get_proposals(app) -> list[dict]:
-    changes_dir = _repo(app) / "openspec" / "changes"
+def _get_proposals() -> list[dict]:
+    changes_dir = _get_repo() / "openspec" / "changes"
     proposals = []
     if not changes_dir.exists():
         return proposals
@@ -254,8 +251,8 @@ def _precheck_proposal(content: str) -> list[dict]:
     return issues
 
 
-def _write_proposal(app, name: str, content: str) -> Path:
-    changes_dir = _repo(app) / "openspec" / "changes" / name
+def _write_proposal(name: str, content: str) -> Path:
+    changes_dir = _get_repo() / "openspec" / "changes" / name
     changes_dir.mkdir(parents=True, exist_ok=True)
     proposal_path = changes_dir / "proposal.md"
     proposal_path.write_text(content)

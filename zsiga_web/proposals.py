@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 
 from . import (
     _load_config, _get_proposals, _get_pipeline_status,
-    _precheck_proposal, _write_proposal,
+    _precheck_proposal, _write_proposal, _get_repo,
 )
 
 proposals_bp = Blueprint("proposals", __name__, template_folder="../templates")
@@ -11,8 +11,8 @@ proposals_bp = Blueprint("proposals", __name__, template_folder="../templates")
 
 @proposals_bp.route("/")
 def index():
-    proposals = _get_proposals(proposals_bp)
-    pipeline = _get_pipeline_status(proposals_bp)
+    proposals = _get_proposals()
+    pipeline = _get_pipeline_status()
     active = pipeline.get("active_proposal")
     current_phase = pipeline.get("current_phase")
     return render_template("proposals.html",
@@ -47,7 +47,7 @@ def submit():
         return render_template("proposal_submit.html", precheck=precheck, content=content, name=name)
 
     target = request.form.get("target", "").strip()
-    config = _load_config(proposals_bp)
+    config = _load_config()
     targets = config.get("targets", {})
     if target and target not in targets:
         flash(f"目标项目 {target} 不存在于配置中", "error")
@@ -56,7 +56,7 @@ def submit():
     if target:
         content = f"# {name}\n\n## Target\n{target}\n\n{content}"
 
-    _write_proposal(proposals_bp, name, content)
+    _write_proposal(name, content)
     flash(f"Proposal '{name}' 已投递到队列", "success")
     return redirect(url_for("proposals.index"))
 
@@ -71,7 +71,7 @@ def precheck():
 @proposals_bp.route("/remove/<name>", methods=["POST"])
 def remove(name):
     from pathlib import Path
-    change_dir = _repo(proposals_bp) / "openspec" / "changes" / name
+    change_dir = _get_repo() / "openspec" / "changes" / name
     if change_dir.exists():
         import shutil
         shutil.rmtree(change_dir)
@@ -84,8 +84,7 @@ def remove(name):
 @proposals_bp.route("/pause/<name>", methods=["POST"])
 def pause(name):
     from pathlib import Path
-    from . import _repo
-    change_dir = _repo(proposals_bp) / "openspec" / "changes" / name
+    change_dir = _get_repo() / "openspec" / "changes" / name
     pause_file = change_dir / ".paused"
     if change_dir.exists():
         pause_file.touch()
@@ -96,8 +95,7 @@ def pause(name):
 @proposals_bp.route("/resume/<name>", methods=["POST"])
 def resume(name):
     from pathlib import Path
-    from . import _repo
-    pause_file = _repo(proposals_bp) / "openspec" / "changes" / name / ".paused"
+    pause_file = _get_repo() / "openspec" / "changes" / name / ".paused"
     if pause_file.exists():
         pause_file.unlink()
         flash(f"Proposal '{name}' 已恢复", "success")

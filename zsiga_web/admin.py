@@ -10,7 +10,7 @@ admin_bp = Blueprint("admin", __name__, template_folder="../templates")
 
 @admin_bp.route("/")
 def index():
-    config = _load_config(admin_bp)
+    config = _load_config()
     targets = config.get("targets", {})
     llm = config.get("agent", {}).get("llm", {})
     github = config.get("github", {})
@@ -34,7 +34,7 @@ def target_add():
         flash(f"路径验证失败: {validation['message']}", "error")
         return redirect(url_for("admin.index"))
 
-    config = _load_config(admin_bp)
+    config = _load_config()
     if "targets" not in config:
         config["targets"] = {}
 
@@ -58,24 +58,24 @@ def target_add():
             }
 
     config["targets"][name] = target_cfg
-    _save_config(admin_bp, config)
+    _save_config(config)
     flash(f"项目 {name} 添加成功", "success")
     return redirect(url_for("admin.index"))
 
 
 @admin_bp.route("/target/delete/<name>", methods=["POST"])
 def target_delete(name):
-    config = _load_config(admin_bp)
+    config = _load_config()
     if "targets" in config and name in config["targets"]:
         del config["targets"][name]
-        _save_config(admin_bp, config)
+        _save_config(config)
         flash(f"项目 {name} 已删除", "success")
     return redirect(url_for("admin.index"))
 
 
 @admin_bp.route("/target/validate/<name>")
 def target_validate(name):
-    config = _load_config(admin_bp)
+    config = _load_config()
     target = config.get("targets", {}).get(name)
     if not target:
         return {"ok": False, "message": f"项目 {name} 不存在"}
@@ -105,7 +105,7 @@ def llm_update():
         flash("API Key 不能为空", "error")
         return redirect(url_for("admin.index"))
 
-    config = _load_config(admin_bp)
+    config = _load_config()
     if "agent" not in config:
         config["agent"] = {}
     config["agent"]["llm"] = {
@@ -116,7 +116,7 @@ def llm_update():
         "max_tokens": config.get("agent", {}).get("llm", {}).get("max_tokens", 4096),
         "temperature": config.get("agent", {}).get("llm", {}).get("temperature", 0.3),
     }
-    _save_config(admin_bp, config)
+    _save_config(config)
 
     validation = _validate_llm_key(api_key, base_url, model)
     if validation["ok"]:
@@ -143,12 +143,12 @@ def github_update():
     token = request.form.get("token", "").strip()
     repo_url = request.form.get("repo_url", "").strip()
 
-    config = _load_config(admin_bp)
+    config = _load_config()
     config["github"] = {
         "token": token or "${GITHUB_TOKEN}",
         "repo_url": repo_url,
     }
-    _save_config(admin_bp, config)
+    _save_config(config)
 
     if token and not token.startswith("${"):
         validation = _validate_github_token(token)
