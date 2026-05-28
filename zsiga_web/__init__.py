@@ -1,11 +1,9 @@
-"""zsiga-web: Independent management console for zsiga autonomous engineer."""
-import json
+import subprocess
 import os
+import json
 import re
 import sqlite3
-import subprocess
 from pathlib import Path
-
 import yaml
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 
@@ -13,14 +11,14 @@ ZSIGA_REPO = os.environ.get("ZSIGA_REPO", "/home/zsiga/repo")
 DAEMON_URL = os.environ.get("ZSIGA_DAEMON_URL", "http://localhost:58175")
 
 
-def create_app(repo_path: str = None, daemon_url: str = None):
+def create_app(repo_path=None, daemon_url=None):
     app = Flask(__name__)
     app.secret_key = "zsiga-web-console"
     app.config["ZSIGA_REPO"] = repo_path or ZSIGA_REPO
     app.config["DAEMON_URL"] = daemon_url or DAEMON_URL
 
     @app.template_filter("status_class")
-    def status_class(status: str) -> str:
+    def status_class(status):
         mapping = {
             "healthy": "good", "ready": "good", "running": "good", "active": "good",
             "success": "good", "PASS": "good", "working": "good",
@@ -74,12 +72,12 @@ def create_app(repo_path: str = None, daemon_url: str = None):
     return app
 
 
-def _get_repo() -> Path:
+def _get_repo():
     from flask import current_app
     return Path(current_app.config["ZSIGA_REPO"])
 
 
-def _load_config() -> dict:
+def _load_config():
     cfg_path = _get_repo() / "zsiga.yaml"
     if not cfg_path.exists():
         return {}
@@ -87,13 +85,97 @@ def _load_config() -> dict:
         return yaml.safe_load(f) or {}
 
 
-def _save_config(config: dict):
+def _save_config(config):
     cfg_path = _get_repo() / "zsiga.yaml"
     with open(cfg_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-def _get_db() -> sqlite3.Connection:
+def _ensure_self_target(config):
+    if "targets" not in config:
+        config["targets"] = {}
+    if "zsiga" not in config["targets"]:
+        config["targets"]["zsiga"] = {
+            "domain": "self",
+            "path": str(_get_repo()),
+            "transport": "local",
+            "deploy_branch": "zsiga-l5-autonomous-engineer",
+            "description": "zsiga 自主工程智能体自身演进",
+        }
+    if "active_target" not in config:
+        config["active_target"] = "zsiga"
+    return config
+
+
+def _runtime_state_path():
+    return _get_repo() / "data" / "runtime_state.yaml"
+
+
+def _load_runtime_state():
+    p = _runtime_state_path()
+    if p.exists():
+        try:
+            with open(p) as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            pass
+    return {"active_target": "zsiga"}
+
+
+def _save_runtime_state(state):
+    p = _runtime_state_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        yaml.dump(state, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def _get_active_target(config):
+    """Read active_target from runtime_state.yaml. All targets preserved in config."""
+    rs = _load_runtime_state()
+    name = rs.get("active_target", "zsiga")
+    target_cfg = config.get("targets", {}).get(name, {})
+    return name, target_cfg
+
+
+def _check_daemon_state():
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "--max-time", "3", f"{DAEMON_URL}/api/daemon-state"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return json.loads(result.stdout)
+    except Exception:
+        pass
+    return {}
+
+
+def _restart_daemon():
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "systemctl", "restart", "zsiga-daemon"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            return {"ok": True, "message": "Daemon 重启成功"}
+        return {"ok": False, "message": f"重启失败: {result.stderr[:200]}"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)[:200]}
+
+
+def _validate_ssh_connection(host, user, key_path):
+    try:
+        cmd = ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+               "-i", key_path, f"{user}@{host}", "echo OK"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if "OK" in result.stdout:
+            return {"ok": True, "message": f"SSH 连接成功: {user}@{host}"}
+        return {"ok": False, "message": f"连接失败: {result.stderr[:200]}"}
+    except Exception as e:
+        return {"ok": False, "message": str(e)[:200]}
+
+
+def _get_db():
     db_path = _get_repo() / "data" / "zsiga.db"
     if not db_path.exists():
         return None
@@ -102,7 +184,7 @@ def _get_db() -> sqlite3.Connection:
     return conn
 
 
-def _get_daemon_status() -> dict:
+def _get_daemon_status():
     state_path = _get_repo() / "data" / "daemon_state.json"
     if state_path.exists():
         try:
@@ -112,7 +194,7 @@ def _get_daemon_status() -> dict:
     return {"state": "unknown"}
 
 
-def _get_pipeline_status() -> dict:
+def _get_pipeline_status():
     from flask import current_app
     daemon_url = current_app.config.get("DAEMON_URL", DAEMON_URL)
     try:
@@ -127,7 +209,7 @@ def _get_pipeline_status() -> dict:
     return {}
 
 
-def _get_proposal_stats() -> dict:
+def _get_proposal_stats():
     from flask import current_app
     daemon_url = current_app.config.get("DAEMON_URL", DAEMON_URL)
     try:
@@ -142,7 +224,7 @@ def _get_proposal_stats() -> dict:
     return {}
 
 
-def _get_proposals() -> list[dict]:
+def _get_proposals():
     changes_dir = _get_repo() / "openspec" / "changes"
     proposals = []
     if not changes_dir.exists():
@@ -160,7 +242,7 @@ def _get_proposals() -> list[dict]:
     return proposals
 
 
-def _read_phase_state(change_dir: Path) -> dict:
+def _read_phase_state(change_dir):
     ps = change_dir / ".phase_state"
     if ps.exists():
         try:
@@ -170,7 +252,7 @@ def _read_phase_state(change_dir: Path) -> dict:
     return {}
 
 
-def _validate_llm_key(api_key: str, base_url: str, model: str) -> dict:
+def _validate_llm_key(api_key, base_url, model):
     try:
         import urllib.request
         url = f"{base_url}/chat/completions"
@@ -191,7 +273,7 @@ def _validate_llm_key(api_key: str, base_url: str, model: str) -> dict:
         return {"ok": False, "message": str(e)[:200]}
 
 
-def _validate_project_path(path: str) -> dict:
+def _validate_project_path(path):
     p = Path(path)
     if not p.exists():
         return {"ok": False, "message": f"目录不存在: {path}"}
@@ -200,7 +282,7 @@ def _validate_project_path(path: str) -> dict:
     return {"ok": True, "message": "路径有效"}
 
 
-def _validate_git_remote(repo_path: str) -> dict:
+def _validate_git_remote(repo_path):
     try:
         result = subprocess.run(
             ["git", "remote", "-v"],
@@ -214,7 +296,7 @@ def _validate_git_remote(repo_path: str) -> dict:
         return {"ok": False, "message": str(e)[:200]}
 
 
-def _validate_github_token(token: str) -> dict:
+def _validate_github_token(token):
     if not token:
         return {"ok": False, "message": "Token 为空"}
     try:
@@ -239,7 +321,7 @@ PROPOSAL_CHECKS = [
 ]
 
 
-def _precheck_proposal(content: str) -> list[dict]:
+def _precheck_proposal(content):
     issues = []
     if len(content) < 100:
         issues.append({"level": "error", "message": "Proposal 内容太短（少于 100 字符），请补充更多细节"})
@@ -251,7 +333,7 @@ def _precheck_proposal(content: str) -> list[dict]:
     return issues
 
 
-def _write_proposal(name: str, content: str) -> Path:
+def _write_proposal(name, content):
     changes_dir = _get_repo() / "openspec" / "changes" / name
     changes_dir.mkdir(parents=True, exist_ok=True)
     proposal_path = changes_dir / "proposal.md"

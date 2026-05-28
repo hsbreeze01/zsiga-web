@@ -1,34 +1,110 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="section">
-  <h2>📋 项目配置</h2>
+  <h2>🎯 当前工作模式</h2>
   <table>
-    <thead><tr><th>项目名</th><th>路径</th><th>部署分支</th><th>传输方式</th><th>操作</th></tr></thead>
-    <tbody>
-    {% for name, t in targets.items() %}
     <tr>
-      <td><strong>{{ name }}</strong></td>
-      <td><code>{{ t.path }}</code></td>
-      <td>{{ t.deploy_branch }}</td>
-      <td>{{ t.transport }}</td>
-      <td>
-        <button onclick="validateTarget('{{ name }}')" class="btn btn-sm">验证</button>
-        <span id="validate-{{ name }}" class="validate-result"></span>
-        <form method="post" action="/admin/target/delete/{{ name }}" style="display:inline" onsubmit="return confirm('确认删除项目 {{ name }}？')">
-          <button type="submit" class="btn btn-sm btn-danger">删除</button>
-        </form>
-      </td>
+      <td><strong>模式</strong></td>
+      <td>{{ '自演进模式' if active_target == 'zsiga' else '外部项目: ' + active_target }}</td>
     </tr>
+    <tr>
+      <td><strong>项目路径</strong></td>
+      <td><code>{{ active_target_info.get('path', '—') }}</code></td>
+    </tr>
+    <tr>
+      <td><strong>项目描述</strong></td>
+      <td>{{ active_target_info.get('description', '—') }}</td>
+    </tr>
+    <tr>
+      <td><strong>技术栈</strong></td>
+      <td>{{ active_target_info.get('tech_stack', []) | join(', ') }}</td>
+    </tr>
+    <tr>
+      <td><strong>部署分支</strong></td>
+      <td>{{ active_target_info.get('deploy_branch', '—') }}</td>
+    </tr>
+  </table>
+
+  <h3>切换项目</h3>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+    {% for name, t in targets.items() %}
+      {% if name != 'zsiga' %}
+      <div class="target-card" style="border:1px solid {% if name == active_target %}#34d399{% else %}#334155{% endif %};padding:10px;border-radius:4px;min-width:200px;{% if name == active_target %}background:#065f4630{% endif %}">
+        <strong>{{ name }}</strong>
+        <p style="margin:4px 0;font-size:0.9em">{{ t.get('description', '—') }}</p>
+        <p style="margin:4px 0;font-size:0.85em"><code>{{ t.get('path', '—') }}</code></p>
+        {% if name == active_target %}
+        <span class="badge badge-good">当前活跃</span>
+        {% else %}
+        <form method="post" action="/admin/target/activate/{{ name }}" style="display:inline;margin-top:4px">
+          <button type="submit" class="btn btn-sm">切换到此项目</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if active_target != 'zsiga' %}
+    <div class="target-card" style="border:1px solid #4a9;padding:10px;border-radius:4px;min-width:200px">
+      <strong>zsiga 自演进</strong>
+      <p style="margin:4px 0;font-size:0.9em">回到 zsiga 自身演进模式</p>
+      <form method="post" action="/admin/target/activate/zsiga" style="display:inline;margin-top:6px">
+        <button type="submit" class="btn btn-sm">回到自演进</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="target-card" style="border:1px solid #34d399;padding:10px;border-radius:4px;min-width:200px;background:#065f4630">
+      <strong>zsiga 自演进</strong>
+      <span class="badge badge-good">当前活跃</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <h2>🔧 外部项目管理</h2>
+  {% set external_targets = targets.items() | rejectattr(0, 'equalto', 'zsiga') | list %}
+  {% if external_targets %}
+  <table>
+    <thead><tr><th>名称</th><th>描述</th><th>路径</th><th>技术栈</th><th>传输</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for name, t in external_targets %}
+      <tr{% if name == active_target %} style="background:#065f4630"{% endif %}>
+        <td><strong>{{ name }}</strong></td>
+        <td>{{ t.get('description', '—') }}</td>
+        <td><code>{{ t.get('path', '—') }}</code></td>
+        <td>{{ t.get('tech_stack', []) | join(', ') }}</td>
+        <td>{{ t.get('transport', '—') }}</td>
+        <td>
+          {% if name == active_target %}
+          <span class="badge badge-good">活跃</span>
+          {% else %}
+          <span class="badge badge-muted">待命</span>
+          {% endif %}
+        </td>
+        <td>
+          <button onclick="validateTarget('{{ name }}')" class="btn btn-sm">验证</button>
+          <span id="validate-{{ name }}" class="validate-result"></span>
+          {% if name != active_target %}
+          <form method="post" action="/admin/target/delete/{{ name }}" style="display:inline"
+                onsubmit="return confirm('确认删除 {{ name }}？')">
+            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p style="color:#999">暂无外部项目，点击下方添加。</p>
+  {% endif %}
 
   <details class="details">
-    <summary>+ 添加项目</summary>
+    <summary>+ 添加外部项目</summary>
     <form method="post" action="/admin/target/add" class="form-grid">
       <div class="form-group">
         <label>项目名称</label>
-        <input type="text" name="name" placeholder="factory" required>
+        <input type="text" name="name" placeholder="d8q-datafactory" required>
       </div>
       <div class="form-group">
         <label>项目路径</label>
@@ -40,29 +116,49 @@
       </div>
       <div class="form-group">
         <label>测试命令</label>
-        <input type="text" name="test_cmd" placeholder="venv/bin/python -m pytest -x --tb=short">
+        <input type="text" name="test_cmd" placeholder="venv/bin/python -m pytest -x">
+      </div>
+      <div class="form-group">
+        <label>Lint 命令</label>
+        <input type="text" name="lint_cmd" placeholder="venv/bin/python -m ruff check .">
       </div>
       <div class="form-group">
         <label>传输方式</label>
-        <select name="transport">
-          <option value="local">本地</option>
+        <select name="transport" id="transport-select">
           <option value="ssh">SSH</option>
+          <option value="local">本地</option>
         </select>
       </div>
-      <div class="form-group ssh-fields" style="display:none">
+      <div class="form-group ssh-fields">
         <label>SSH 主机</label>
         <input type="text" name="ssh_host" placeholder="47.99.57.152">
       </div>
-      <div class="form-group ssh-fields" style="display:none">
+      <div class="form-group ssh-fields">
         <label>SSH 用户</label>
         <input type="text" name="ssh_user" value="root">
       </div>
-      <div class="form-group ssh-fields" style="display:none">
+      <div class="form-group ssh-fields">
         <label>SSH 密钥路径</label>
         <input type="text" name="ssh_key_path" placeholder="~/.ssh/id_ed25519">
       </div>
       <div class="form-group full">
-        <button type="submit" class="btn">添加项目</button>
+        <label>项目描述</label>
+        <input type="text" name="description" placeholder="数据工厂服务 — 采集/清洗/分发市场数据">
+      </div>
+      <div class="form-group">
+        <label>技术栈（逗号分隔）</label>
+        <input type="text" name="tech_stack" placeholder="python, fastapi, postgresql">
+      </div>
+      <div class="form-group">
+        <label>关键目录（逗号分隔）</label>
+        <input type="text" name="key_dirs" placeholder="api/routes, services, schemas">
+      </div>
+      <div class="form-group full">
+        <label>编码约定</label>
+        <input type="text" name="conventions" placeholder="REST API 使用 fastapi，数据模型用 pydantic">
+      </div>
+      <div class="form-group full">
+        <button type="submit" class="btn">保存外部项目</button>
       </div>
     </form>
   </details>
@@ -110,8 +206,48 @@
   </form>
 </div>
 
+<div class="section">
+  <h2>⚡ Daemon 控制</h2>
+  <p style="margin-bottom:0.6rem;font-size:0.88rem">
+    当前状态:
+    {% if daemon_state.get('state') == 'running' %}
+    <span class="badge badge-warn">运行中</span>
+    <span style="color:#fbbf24;font-size:0.82rem">（自演进运行期间不可切换到外部项目）</span>
+    {% elif daemon_state.get('state') == 'idle' %}
+    <span class="badge badge-good">空闲</span>
+    {% else %}
+    <span class="badge badge-muted">{{ daemon_state.get('state', '未知') }}</span>
+    {% endif %}
+  </p>
+  <form method="post" action="/admin/daemon/restart" style="display:inline">
+    <button type="submit" class="btn" onclick="return confirm('确认重启 daemon？当前任务会被中断。')">重启 Daemon</button>
+  </form>
+</div>
+
+<div class="section">
+  <h2>🕐 自演进时间窗口</h2>
+  <p style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.8rem">
+    在设定的时间窗口内，daemon 会自动切回自演进模式，外部项目暂停。
+  </p>
+  <form method="post" action="/admin/evolution-schedule" class="form-grid" style="max-width:400px">
+    <div class="form-group">
+      <label>开始时间（时）</label>
+      <input type="number" name="start_hour" min="0" max="23"
+             value="{{ evolution.get('window_start_hour', 22) }}" required>
+    </div>
+    <div class="form-group">
+      <label>结束时间（时）</label>
+      <input type="number" name="end_hour" min="0" max="23"
+             value="{{ evolution.get('window_end_hour', 10) }}" required>
+    </div>
+    <div class="form-group full">
+      <button type="submit" class="btn">保存时间窗口</button>
+    </div>
+  </form>
+</div>
+
 <script>
-document.querySelector('select[name="transport"]').addEventListener('change', function() {
+document.getElementById('transport-select').addEventListener('change', function() {
   document.querySelectorAll('.ssh-fields').forEach(function(el) {
     el.style.display = this.value === 'ssh' ? '' : 'none';
   }.bind(this));
