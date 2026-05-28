@@ -226,3 +226,48 @@ class TestRuntimeStatePersistence:
         resp = client.get("/admin/")
         html = resp.data.decode()
         assert "自演进模式" in html
+
+
+class TestDaemonRestart:
+    @patch("zsiga_web.time.sleep", return_value=None)
+    @patch("zsiga_web.os.kill")
+    @patch("zsiga_web.subprocess.run")
+    def test_restart_stops_manual_lock_pid_before_systemd_start(
+        self, mock_run, mock_kill, mock_sleep, app
+    ):
+        from zsiga_web import _restart_daemon
+
+        _runtime_state_path(app).parent.mkdir(parents=True, exist_ok=True)
+        (_runtime_state_path(app).parent / "lock.pid").write_text("123\n")
+        mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+        mock_kill.side_effect = [
+            None,               # os.kill(pid, 0): running
+            None,               # os.kill(pid, SIGTERM): terminate
+            ProcessLookupError, # os.kill(pid, 0): stopped
+        ]
+
+        with app.app_context():
+            result = _restart_daemon()
+
+        assert result["ok"] is True
+        assert [call.args[0][3] for call in mock_run.call_args_list] == ["stop", "start"]
+        assert mock_kill.call_args_list[1].args == (123, 15)
+
+    @patch("zsiga_web.os.kill")
+    @patch("zsiga_web.subprocess.run")
+    def test_restart_reports_timeout_when_lock_pid_stays_running(
+        self, mock_run, mock_kill, app
+    ):
+        from zsiga_web import _restart_daemon
+
+        _runtime_state_path(app).parent.mkdir(parents=True, exist_ok=True)
+        (_runtime_state_path(app).parent / "lock.pid").write_text("123\n")
+        mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+        mock_kill.return_value = None
+
+        with patch("zsiga_web.time.time", side_effect=[0, 21]):
+            with app.app_context():
+                result = _restart_daemon()
+
+        assert result["ok"] is False
+        assert "未在超时内退出" in result["message"]

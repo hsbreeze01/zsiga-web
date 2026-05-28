@@ -3,6 +3,8 @@ import os
 import json
 import re
 import sqlite3
+import signal
+import time
 from pathlib import Path
 import yaml
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
@@ -150,15 +152,55 @@ def _check_daemon_state():
     return {}
 
 
+def _run_daemon_control(command, timeout=30):
+    return subprocess.run(
+        ["sudo", "-n", "systemctl", command, "zsiga-daemon"],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def _daemon_lock_pid():
+    lock_path = _get_repo() / "data" / "lock.pid"
+    try:
+        return int(lock_path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_is_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _terminate_daemon_pid(pid, timeout_seconds=20):
+    if not _pid_is_running(pid):
+        return True
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not _pid_is_running(pid):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def _restart_daemon():
     try:
-        result = subprocess.run(
-            ["sudo", "-n", "systemctl", "restart", "zsiga-daemon"],
-            capture_output=True, text=True, timeout=30,
-        )
+        _run_daemon_control("stop", timeout=30)
+        pid = _daemon_lock_pid()
+        if pid and not _terminate_daemon_pid(pid):
+            return {"ok": False, "message": f"重启失败: daemon PID {pid} 未在超时内退出"}
+
+        result = _run_daemon_control("start", timeout=30)
         if result.returncode == 0:
             return {"ok": True, "message": "Daemon 重启成功"}
-        return {"ok": False, "message": f"重启失败: {result.stderr[:200]}"}
+        message = (result.stderr or result.stdout or "systemctl start failed")[:200]
+        return {"ok": False, "message": f"重启失败: {message}"}
     except Exception as e:
         return {"ok": False, "message": str(e)[:200]}
 
