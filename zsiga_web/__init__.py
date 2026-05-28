@@ -6,8 +6,9 @@ import sqlite3
 import signal
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 import yaml
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, current_app
 
 ZSIGA_REPO = os.environ.get("ZSIGA_REPO", "/home/zsiga/repo")
 DAEMON_URL = os.environ.get("ZSIGA_DAEMON_URL", "http://localhost:58175")
@@ -167,6 +168,34 @@ def _daemon_lock_pid():
         return None
 
 
+def _daemon_port():
+    daemon_url = current_app.config.get("DAEMON_URL", DAEMON_URL)
+    parsed = urlparse(daemon_url)
+    return parsed.port
+
+
+def _daemon_listen_pids():
+    port = _daemon_port()
+    if not port:
+        return []
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    pids = []
+    for line in result.stdout.splitlines():
+        try:
+            pids.append(int(line.strip()))
+        except ValueError:
+            pass
+    return pids
+
+
 def _pid_is_running(pid):
     try:
         os.kill(pid, 0)
@@ -192,9 +221,16 @@ def _terminate_daemon_pid(pid, timeout_seconds=20):
 def _restart_daemon():
     try:
         _run_daemon_control("stop", timeout=30)
-        pid = _daemon_lock_pid()
-        if pid and not _terminate_daemon_pid(pid):
-            return {"ok": False, "message": f"重启失败: daemon PID {pid} 未在超时内退出"}
+        pids = []
+        lock_pid = _daemon_lock_pid()
+        if lock_pid:
+            pids.append(lock_pid)
+        for pid in _daemon_listen_pids():
+            if pid not in pids:
+                pids.append(pid)
+        for pid in pids:
+            if not _terminate_daemon_pid(pid):
+                return {"ok": False, "message": f"重启失败: daemon PID {pid} 未在超时内退出"}
 
         result = _run_daemon_control("start", timeout=30)
         if result.returncode == 0:

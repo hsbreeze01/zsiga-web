@@ -250,8 +250,41 @@ class TestDaemonRestart:
             result = _restart_daemon()
 
         assert result["ok"] is True
-        assert [call.args[0][3] for call in mock_run.call_args_list] == ["stop", "start"]
+        systemctl_commands = [
+            call.args[0][3]
+            for call in mock_run.call_args_list
+            if call.args[0][:3] == ["sudo", "-n", "systemctl"]
+        ]
+        assert systemctl_commands == ["stop", "start"]
         assert mock_kill.call_args_list[1].args == (123, 15)
+
+    @patch("zsiga_web.time.sleep", return_value=None)
+    @patch("zsiga_web.os.kill")
+    @patch("zsiga_web.subprocess.run")
+    def test_restart_stops_port_listener_when_lock_pid_missing(
+        self, mock_run, mock_kill, mock_sleep, app
+    ):
+        from zsiga_web import _restart_daemon
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stderr="", stdout=""),
+            MagicMock(returncode=0, stderr="", stdout="456\n"),
+            MagicMock(returncode=0, stderr="", stdout=""),
+        ]
+        mock_kill.side_effect = [
+            None,               # os.kill(pid, 0): running
+            None,               # os.kill(pid, SIGTERM): terminate
+            ProcessLookupError, # os.kill(pid, 0): stopped
+        ]
+
+        with app.app_context():
+            result = _restart_daemon()
+
+        assert result["ok"] is True
+        assert mock_run.call_args_list[1].args[0] == [
+            "lsof", "-nP", "-tiTCP:58175", "-sTCP:LISTEN",
+        ]
+        assert mock_kill.call_args_list[1].args == (456, 15)
 
     @patch("zsiga_web.os.kill")
     @patch("zsiga_web.subprocess.run")
