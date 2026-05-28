@@ -298,9 +298,10 @@ class TestDaemonRestart:
         mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
         mock_kill.return_value = None
 
-        with patch("zsiga_web.time.time", side_effect=[0, 21]):
+        with patch("zsiga_web.time.time", side_effect=[0, 21, 21, 27]):
             with app.app_context():
                 result = _restart_daemon()
 
         assert result["ok"] is False
         assert "未在超时内退出" in result["message"]
+        assert mock_kill.call_args_list[2].args == (123, 9)

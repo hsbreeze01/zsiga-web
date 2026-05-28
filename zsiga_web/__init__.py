@@ -215,6 +215,12 @@ def _terminate_daemon_pid(pid, timeout_seconds=20):
         if not _pid_is_running(pid):
             return True
         time.sleep(0.5)
+    os.kill(pid, signal.SIGKILL)
+    kill_deadline = time.time() + 5
+    while time.time() < kill_deadline:
+        if not _pid_is_running(pid):
+            return True
+        time.sleep(0.5)
     return False
 
 
