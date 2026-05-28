@@ -12,6 +12,7 @@ Covers:
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -255,7 +256,7 @@ class TestDaemonRestart:
             for call in mock_run.call_args_list
             if call.args[0][:3] == ["sudo", "-n", "systemctl"]
         ]
-        assert systemctl_commands == ["stop", "start"]
+        assert systemctl_commands == ["stop", "reset-failed", "start"]
         assert mock_kill.call_args_list[1].args == (123, 15)
 
     @patch("zsiga_web.time.sleep", return_value=None)
@@ -269,6 +270,7 @@ class TestDaemonRestart:
         mock_run.side_effect = [
             MagicMock(returncode=0, stderr="", stdout=""),
             MagicMock(returncode=0, stderr="", stdout="456\n"),
+            MagicMock(returncode=0, stderr="", stdout=""),
             MagicMock(returncode=0, stderr="", stdout=""),
         ]
         mock_kill.side_effect = [
@@ -284,6 +286,32 @@ class TestDaemonRestart:
         assert mock_run.call_args_list[1].args[0] == [
             "lsof", "-nP", "-tiTCP:58175", "-sTCP:LISTEN",
         ]
+        assert mock_kill.call_args_list[1].args == (456, 15)
+
+    @patch("zsiga_web.time.sleep", return_value=None)
+    @patch("zsiga_web.os.kill")
+    @patch("zsiga_web.subprocess.run")
+    def test_restart_continues_when_systemctl_stop_times_out(
+        self, mock_run, mock_kill, mock_sleep, app
+    ):
+        from zsiga_web import _restart_daemon
+
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(["sudo", "-n", "systemctl", "stop", "zsiga-daemon"], 5),
+            MagicMock(returncode=0, stderr="", stdout="456\n"),
+            MagicMock(returncode=0, stderr="", stdout=""),
+            MagicMock(returncode=0, stderr="", stdout=""),
+        ]
+        mock_kill.side_effect = [
+            None,
+            None,
+            ProcessLookupError,
+        ]
+
+        with app.app_context():
+            result = _restart_daemon()
+
+        assert result["ok"] is True
         assert mock_kill.call_args_list[1].args == (456, 15)
 
     @patch("zsiga_web.os.kill")

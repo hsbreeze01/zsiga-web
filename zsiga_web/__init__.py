@@ -226,7 +226,10 @@ def _terminate_daemon_pid(pid, timeout_seconds=20):
 
 def _restart_daemon():
     try:
-        _run_daemon_control("stop", timeout=30)
+        try:
+            _run_daemon_control("stop", timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         pids = []
         lock_pid = _daemon_lock_pid()
         if lock_pid:
@@ -238,6 +241,7 @@ def _restart_daemon():
             if not _terminate_daemon_pid(pid):
                 return {"ok": False, "message": f"重启失败: daemon PID {pid} 未在超时内退出"}
 
+        _run_daemon_control("reset-failed", timeout=10)
         result = _run_daemon_control("start", timeout=30)
         if result.returncode == 0:
             return {"ok": True, "message": "Daemon 重启成功"}
