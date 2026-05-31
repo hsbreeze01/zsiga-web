@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 
 from . import (
+    _is_evolution_paused, _evolution_pause_file,
     _load_config, _save_config, _validate_llm_key,
     _validate_project_path, _validate_git_remote, _validate_github_token,
     _ensure_self_target, _restart_daemon, _get_active_target,
@@ -20,13 +21,15 @@ def index():
     github = config.get("github", {})
     evolution = _load_runtime_state()
     daemon_state = _check_daemon_state()
+    evo_paused = _is_evolution_paused()
     return render_template("admin.html",
                            targets=targets,
                            active_target=active_target,
                            active_target_info=active_target_info,
                            llm=llm, github=github,
                            evolution=evolution,
-                           daemon_state=daemon_state)
+                           daemon_state=daemon_state,
+                           evo_paused=evo_paused)
 
 
 @admin_bp.route("/target/add", methods=["POST"])
@@ -268,3 +271,19 @@ def evolution_schedule():
 
     flash(f"自演进时间窗口已更新: {start_h}:00 - {end_h}:00（到时间将自动切回自演进模式）", "success")
     return redirect(url_for("admin.index"))
+
+@admin_bp.route("/evolution-pause", methods=["POST"])
+def evolution_pause():
+    _evolution_pause_file().touch()
+    flash("自演进已暂停", "success")
+    return redirect(url_for("admin.index"))
+
+
+@admin_bp.route("/evolution-resume", methods=["POST"])
+def evolution_resume():
+    f = _evolution_pause_file()
+    if f.exists():
+        f.unlink()
+    flash("自演进已恢复", "success")
+    return redirect(url_for("admin.index"))
+

@@ -29,6 +29,25 @@
     <div class="card-value" style="font-size:1rem">{{ config.get('agent', {}).get('llm', {}).get('model', '—') }}</div>
     <div class="card-meta">{{ config.get('agent', {}).get('llm', {}).get('provider', '—') }}</div>
   </div>
+
+<div class="card">
+  <div class="card-label">自演进</div>
+  <div class="card-value" id="evo-status">
+    {% if evolution.get('paused') %}
+    <span class="text-warn">已暂停</span>
+    {% else %}
+    <span class="text-good">运行中</span>
+    {% endif %}
+  </div>
+  <div class="card-meta">
+    <button class="btn btn-sm {% if evolution.get('paused') %}btn-primary{% else %}btn-danger{% endif %}"
+            id="evo-toggle-btn"
+            onclick="toggleEvolution()"
+            data-action="{% if evolution.get('paused') %}resume{% else %}pause{% endif %}">
+      {% if evolution.get('paused') %}恢复演进{% else %}暂停演进{% endif %}
+    </button>
+  </div>
+</div>
 </div>
 
 {% if pipeline.get('active_proposal') %}
@@ -95,4 +114,34 @@
 <script>
 setTimeout(function(){ location.reload(); }, 30000);
 </script>
+
+<script>
+function toggleEvolution() {
+  var btn = document.getElementById('evo-toggle-btn');
+  var action = btn.getAttribute('data-action');
+  btn.disabled = true;
+  btn.textContent = action === 'pause' ? '暂停中...' : '恢复中...';
+  fetch('/api/evolution-toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      location.reload();
+    } else {
+      alert('操作失败: ' + (data.message || '未知错误'));
+      btn.disabled = false;
+      btn.textContent = action === 'pause' ? '暂停演进' : '恢复演进';
+    }
+  })
+  .catch(function(e) {
+    alert('请求失败: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = action === 'pause' ? '暂停演进' : '恢复演进';
+  });
+}
+</script>
+
 {% endblock %}

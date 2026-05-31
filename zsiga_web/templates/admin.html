@@ -55,6 +55,17 @@
     <div class="target-card" style="border:1px solid #34d399;padding:10px;border-radius:4px;min-width:200px;background:#065f4630">
       <strong>zsiga 自演进</strong>
       <span class="badge badge-good">当前活跃</span>
+      {% if evo_paused %}
+      <br><span class="badge badge-warn" style="margin-top:6px;display:inline-block">演进已暂停</span>
+      <form method="post" action="/admin/evolution-resume" style="display:inline;margin-top:4px">
+        <button type="submit" class="btn btn-sm btn-primary">恢复演进</button>
+      </form>
+      {% else %}
+      <br><span class="badge badge-good" style="margin-top:6px;display:inline-block">演进运行中</span>
+      <form method="post" action="/admin/evolution-pause" style="display:inline;margin-top:4px">
+        <button type="submit" class="btn btn-sm btn-danger">暂停演进</button>
+      </form>
+      {% endif %}
     </div>
     {% endif %}
   </div>

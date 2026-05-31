@@ -48,9 +48,11 @@ def create_app(repo_path=None, daemon_url=None):
         daemon_status = _get_daemon_status()
         pipeline = _get_pipeline_status()
         proposal_stats = _get_proposal_stats()
+        evolution = _get_evolution_status()
         return render_template("index.html",
                                config=cfg, daemon=daemon_status,
-                               pipeline=pipeline, stats=proposal_stats)
+                               pipeline=pipeline, stats=proposal_stats,
+                               evolution=evolution)
 
     @app.route("/api/config")
     def api_config():
@@ -71,6 +73,29 @@ def create_app(repo_path=None, daemon_url=None):
     @app.route("/api/pipeline-status")
     def api_pipeline_status():
         return jsonify(_get_pipeline_status())
+
+    @app.route("/api/evolution-toggle", methods=["POST"])
+    def api_evolution_toggle():
+        import logging
+        logger = logging.getLogger(__name__)
+        data = request.get_json(silent=True) or {}
+        action = data.get("action")  # 'pause' or 'resume'
+        pause_file = _evolution_pause_file()
+        if action == "pause":
+            pause_file.touch()
+            logger.info("Evolution paused via web UI")
+            return jsonify({"ok": True, "paused": True, "message": "自演进已暂停"})
+        elif action == "resume":
+            if pause_file.exists():
+                pause_file.unlink()
+            logger.info("Evolution resumed via web UI")
+            return jsonify({"ok": True, "paused": False, "message": "自演进已恢复"})
+        else:
+            return jsonify({"ok": False, "message": "action must be 'pause' or 'resume'"}), 400
+
+    @app.route("/api/evolution-status")
+    def api_evolution_status():
+        return jsonify(_get_evolution_status())
 
     return app
 
@@ -427,3 +452,30 @@ def _write_proposal(name, content):
     proposal_path = changes_dir / "proposal.md"
     proposal_path.write_text(content)
     return proposal_path
+
+
+# --- Evolution toggle helpers ---
+
+def _evolution_pause_file():
+    return _get_repo() / '.evolution-pause'
+
+
+def _is_evolution_paused():
+    return _evolution_pause_file().exists()
+
+
+def _get_evolution_status():
+    """Get evolution status from daemon API + local pause file."""
+    from flask import current_app
+    daemon_url = current_app.config.get('DAEMON_URL', DAEMON_URL)
+    status = {'paused': _is_evolution_paused()}
+    try:
+        result = subprocess.run(
+            ['curl', '-s', '--max-time', '3', f'{daemon_url}/api/evolution-status'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            status['daemon'] = json.loads(result.stdout)
+    except Exception:
+        pass
+    return status
